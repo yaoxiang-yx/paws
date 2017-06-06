@@ -30,7 +30,7 @@ import (
 
 func main() {
 	sess, err := session.NewSession(&aws.Config{
-		// TODO: remove hardcoded region
+		// TODO: Jason to remove hardcoded region
 		Region: aws.String("us-east-1")},
 	)
 	if err != nil {
