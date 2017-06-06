@@ -13,9 +13,9 @@ To get the AWS Credentials, the easiest way is to go to the IAM Console -> Users
 
 Create an access key for that user, and place the credentials in your ~/.aws/credentials file as such:
 
-[default]
-aws_access_key_id = {Access key id goes here}
-aws_secret_access_key = {Access key secret goes here}
+    [default]
+    aws_access_key_id = {Access key id goes here}
+    aws_secret_access_key = {Access key secret goes here}
 
 ## Building and running paws
 This can be done with the following:
