@@ -1,3 +1,21 @@
+/*
+Copyright 2017 SourceClear Inc
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+  http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+*/
+
 package tree
 
 import (
@@ -29,11 +47,6 @@ func BuildIAM(session *session.Session) (IAMData, error) {
 
 	return iamData, nil
 }
-
-// func buildKey(key *iam.AccessKeyMetadata) IAMKey {
-
-// 	return IAMKey{ID: *key.AccessKeyId, CreatedAt: *key.CreateDate, Status: *key.Status}
-// }
 
 func buildUser(svc *iam.IAM, user *iam.User) *IAMUser {
 	u := &IAMUser{}
@@ -71,10 +84,45 @@ func buildKeys(svc *iam.IAM, user *IAMUser) {
 	}
 }
 
+// ListMFA
+
+// func getVirtualMFAs(svc *iam.IAM) []*iam.VirtualMFADevice {
+
+// 	maxItems := int64(1000)
+
+// 	devices := make([]*iam.VirtualMFADevice, 50)
+
+// 	remaining := true
+// 	marker := ""
+
+// 	for remaining {
+// 		var input iam.ListVirtualMFADevicesInput
+// 		if len(marker) > 0 {
+// 			input = iam.ListVirtualMFADevicesInput{Marker: &marker, MaxItems: &maxItems}
+// 		} else {
+// 			input = iam.ListVirtualMFADevicesInput{MaxItems: &maxItems}
+// 		}
+
+// 		output, err := svc.ListVirtualMFADevices(&input)
+
+// 		if err != nil {
+// 			log.Fatalf("Couldn't get Virtual MFA devices: %v\n", err)
+// 		}
+// 		devices = append(devices, output.VirtualMFADevices...)
+// 		if output.Marker != nil {
+// 			marker = *output.Marker
+// 		}
+// 		remaining = *output.IsTruncated
+// 	}
+
+// 	for _, d := range devices {
+// 		println(d)
+// 	}
+
+// 	return devices
+// }
+
 // AuditData represents the data collected through an AWS account scan.
-type AuditData struct {
-	IAM IAMData `json:"iam"`
-}
 
 // IAMData contains all IAM related data collected through the AWS account scan.
 type IAMData struct {
@@ -88,6 +136,7 @@ type IAMUser struct {
 	Path      string    `json:"path"`
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
+	MFAType   string    `json:"mfaType"`
 	Keys      []IAMKey  `json:"keys"`
 }
 
