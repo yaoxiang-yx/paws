@@ -20,6 +20,7 @@ package tree
 
 import (
 	"log"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -34,21 +35,25 @@ func BuildIAM(session *session.Session) (IAMData, error) {
 		log.Fatalf("Couldn't list users: %v\n", err)
 	}
 
-	// keys, err := svc.ListAccessKeys(&iam.ListAccessKeysInput{})
-	// if err != nil {
-	// 	log.Fatalf("Couldn't list access keys: %v\n", err)
-	// }
+	//
+	// A slice of virtual MFAs is less than optimal.  Better to
+	// map User Arn -> MFA.
+	//
+	vmfaMap := make(map[string]string)
+	for _, mfa := range getVirtualMFAs(svc) {
+		vmfaMap[*mfa.User.Arn] = *mfa.SerialNumber
+	}
 
 	iamData := IAMData{Users: make([]IAMUser, 0, len(users.Users))}
 
 	for _, user := range users.Users {
-		iamData.Users = append(iamData.Users, *buildUser(svc, user))
+		iamData.Users = append(iamData.Users, *buildUser(svc, user, vmfaMap))
 	}
 
 	return iamData, nil
 }
 
-func buildUser(svc *iam.IAM, user *iam.User) *IAMUser {
+func buildUser(svc *iam.IAM, user *iam.User, vmfaMap map[string]string) *IAMUser {
 	u := &IAMUser{}
 	u.ARN = *user.Arn
 	u.CreatedAt = *user.CreateDate
@@ -56,6 +61,34 @@ func buildUser(svc *iam.IAM, user *iam.User) *IAMUser {
 	u.ID = *user.UserId
 	u.Name = *user.UserName
 	u.Keys = make([]IAMKey, 0, 1) // 1 is the conservative choice, we can always expand as needed.
+
+	//
+	// In order to find out when a password was created, we need to make another API call.  If the
+	// user has no password, this method will return a 404.  This is OK and expected for API-only
+	// users.
+	//
+	loginProfileOutput, err := svc.GetLoginProfile(&iam.GetLoginProfileInput{UserName: user.UserName})
+	if err != nil && !strings.Contains(err.Error(), "404") {
+		log.Fatalf("Couldn't get user login profile for %v: %v\n", user.UserName, err)
+	}
+
+	password := IAMUserPassword{}
+
+	if loginProfileOutput.LoginProfile != nil && loginProfileOutput.LoginProfile.CreateDate != nil {
+		password.CreatedAt = loginProfileOutput.LoginProfile.CreateDate
+	}
+
+	if user.PasswordLastUsed != nil {
+		password.LastUsed = user.PasswordLastUsed
+	}
+
+	u.Password = password
+
+	if len(vmfaMap[u.ARN]) > 0 {
+		u.MFAType = "virtual"
+	} else {
+		u.MFAType = "none"
+	}
 
 	buildKeys(svc, u)
 
@@ -84,43 +117,41 @@ func buildKeys(svc *iam.IAM, user *IAMUser) {
 	}
 }
 
-// ListMFA
+//
+// Query for all Virtual MFAs and return a slice.  The devices can
+// be matched up with IAM users by looking at the User->Arn field.
+//
+func getVirtualMFAs(svc *iam.IAM) []*iam.VirtualMFADevice {
 
-// func getVirtualMFAs(svc *iam.IAM) []*iam.VirtualMFADevice {
+	maxItems := int64(1000)
 
-// 	maxItems := int64(1000)
+	devices := make([]*iam.VirtualMFADevice, 0, 50)
 
-// 	devices := make([]*iam.VirtualMFADevice, 50)
+	remaining := true
+	marker := ""
 
-// 	remaining := true
-// 	marker := ""
+	for remaining {
+		var input iam.ListVirtualMFADevicesInput
+		if len(marker) > 0 {
+			input = iam.ListVirtualMFADevicesInput{Marker: &marker, MaxItems: &maxItems}
+		} else {
+			input = iam.ListVirtualMFADevicesInput{MaxItems: &maxItems}
+		}
 
-// 	for remaining {
-// 		var input iam.ListVirtualMFADevicesInput
-// 		if len(marker) > 0 {
-// 			input = iam.ListVirtualMFADevicesInput{Marker: &marker, MaxItems: &maxItems}
-// 		} else {
-// 			input = iam.ListVirtualMFADevicesInput{MaxItems: &maxItems}
-// 		}
+		output, err := svc.ListVirtualMFADevices(&input)
+		if err != nil {
+			log.Fatalf("Couldn't get Virtual MFA devices: %v\n", err)
+		}
 
-// 		output, err := svc.ListVirtualMFADevices(&input)
+		devices = append(devices, output.VirtualMFADevices...)
+		if output.Marker != nil {
+			marker = *output.Marker
+		}
+		remaining = *output.IsTruncated
+	}
 
-// 		if err != nil {
-// 			log.Fatalf("Couldn't get Virtual MFA devices: %v\n", err)
-// 		}
-// 		devices = append(devices, output.VirtualMFADevices...)
-// 		if output.Marker != nil {
-// 			marker = *output.Marker
-// 		}
-// 		remaining = *output.IsTruncated
-// 	}
-
-// 	for _, d := range devices {
-// 		println(d)
-// 	}
-
-// 	return devices
-// }
+	return devices
+}
 
 // AuditData represents the data collected through an AWS account scan.
 
@@ -131,13 +162,14 @@ type IAMData struct {
 
 // IAMUser represents a single IAM user, as collected through an AWS account scan.
 type IAMUser struct {
-	ARN       string    `json:"arn"`
-	CreatedAt time.Time `json:"createdAt"`
-	Path      string    `json:"path"`
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	MFAType   string    `json:"mfaType"`
-	Keys      []IAMKey  `json:"keys"`
+	ARN       string          `json:"arn"`
+	CreatedAt time.Time       `json:"createdAt"`
+	Path      string          `json:"path"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	MFAType   string          `json:"mfaType"`
+	Keys      []IAMKey        `json:"keys"`
+	Password  IAMUserPassword `json:"password"`
 }
 
 // IAMKey is an access key used by an AWS entity
@@ -152,4 +184,9 @@ type IAMLastUsed struct {
 	Date        time.Time `json:"date"`
 	Region      string    `json:"region"`
 	ServiceName string    `json:"serviceName"`
+}
+
+type IAMUserPassword struct {
+	CreatedAt *time.Time `json:"createdAt"`
+	LastUsed  *time.Time `json:"lastUsed"`
 }
