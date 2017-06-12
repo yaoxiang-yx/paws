@@ -16,7 +16,7 @@ specific language governing permissions and limitations
 under the License.
 */
 
-package tree
+package main
 
 import (
 	"log"
@@ -27,7 +27,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam"
 )
 
-func BuildIAM(session *session.Session) (IAMData, error) {
+type IAMBuilder struct{}
+
+func (builder IAMBuilder) Name() string {
+	return "IAM"
+}
+
+func (builder IAMBuilder) Populate(session *session.Session, tree *AWSTree) {
 
 	svc := iam.New(session)
 	users, err := svc.ListUsers(&iam.ListUsersInput{})
@@ -50,7 +56,7 @@ func BuildIAM(session *session.Session) (IAMData, error) {
 		iamData.Users = append(iamData.Users, *buildUser(svc, user, vmfaMap))
 	}
 
-	return iamData, nil
+	tree.Audit.IAM = &iamData
 }
 
 func buildUser(svc *iam.IAM, user *iam.User, vmfaMap map[string]string) *IAMUser {
@@ -152,8 +158,6 @@ func getVirtualMFAs(svc *iam.IAM) []*iam.VirtualMFADevice {
 
 	return devices
 }
-
-// AuditData represents the data collected through an AWS account scan.
 
 // IAMData contains all IAM related data collected through the AWS account scan.
 type IAMData struct {

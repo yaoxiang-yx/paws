@@ -25,10 +25,36 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/continuous-security/paws/tree"
 )
 
+//
+// TreeBuilder instances provide functionality that
+// populates some portion of the Audit Tree.  These instances
+// should focus in a single AWS service (IAM, RDS, EC2, KMS, etc)
+// and must be carful not to overwrite other sections.
+//
+type TreeBuilder interface {
+
+	//
+	// Populate does as its name implies, it uses the supplied session and
+	// uses it to query the AWS API and build out parts of the supplied AWSTree. This
+	// method must either: 1) Populate its section of tree without fail or 2) On failure it
+	// should call log.Fatalf() to print out an error message and exit the application.
+	//
+	Populate(session *session.Session, tree *AWSTree)
+
+	//
+	// Name returns the simple name of a TreeBuilder.  This will usually be
+	// the name of the AWS service that it populates.
+	//
+	Name() string
+}
+
 func main() {
+
+	// TODO: Put your EC2, RDS, and KMS Treebuilder instances here.
+	builders := []TreeBuilder{IAMBuilder{}}
+
 	sess, err := session.NewSession(&aws.Config{
 		// TODO: Jason to remove hardcoded region
 		Region: aws.String("us-east-1")},
@@ -37,17 +63,15 @@ func main() {
 		log.Fatalf("Couldn't set up session: %v\n", err)
 	}
 
-	iamData, err := tree.BuildIAM(sess)
-	if err != nil {
-		log.Fatalf("Couldn't build IAM data: %v\n", err)
+	tree := &AWSTree{Audit: AuditData{}}
+
+	for _, builder := range builders {
+		fmt.Printf("Querying %v\n", builder.Name())
+		builder.Populate(sess, tree)
 	}
 
-	// TODO: Create KMS, EC2, and RDS data trees and populate
-	// them here, using the IAM code as a base.
-
-	auditData := tree.AuditData{IAM: iamData}
-	tree := tree.AWSTree{Audit: auditData}
-
+	// Temporary debug output. Eventually we need to pull in our custom policies and
+	// compare data <> policy.
 	bytes, err := json.MarshalIndent(tree, "", "  ")
 	fmt.Printf("\n%v\n", string(bytes))
 }

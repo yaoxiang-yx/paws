@@ -16,7 +16,7 @@ specific language governing permissions and limitations
 under the License.
 */
 
-package tree
+package main
 
 func NewTree() AWSTree {
 	tree := AWSTree{}
@@ -32,6 +32,6 @@ type AWSTree struct {
 // AuditData represents the data tree from an AWS audit.  It contains only raw
 // data.  Policy data (and the derived from it) exist elsewhere.
 type AuditData struct {
-	IAM IAMData `json:"iam"`
+	IAM *IAMData `json:"iam"`
 	//TODO: Create and fill in RDS, KMS, and EC2 data here.
 }
