@@ -41,25 +41,22 @@ func (builder IAMBuilder) Populate(session *session.Session, tree *AWSTree) {
 		log.Fatalf("Couldn't list users: %v\n", err)
 	}
 
-	//
-	// A slice of virtual MFAs is less than optimal.  Better to
-	// map User Arn -> MFA.
-	//
-	vmfaMap := make(map[string]string)
-	for _, mfa := range getVirtualMFAs(svc) {
-		vmfaMap[*mfa.User.Arn] = *mfa.SerialNumber
+	mfaMap := make(map[string]string)
+
+	for _, mfa := range getMFAs(svc, users.Users) {
+		mfaMap[*mfa.UserName] = *mfa.SerialNumber
 	}
 
 	iamData := IAMData{Users: make([]IAMUser, 0, len(users.Users))}
 
 	for _, user := range users.Users {
-		iamData.Users = append(iamData.Users, *buildUser(svc, user, vmfaMap))
+		iamData.Users = append(iamData.Users, *buildUser(svc, user, mfaMap))
 	}
 
 	tree.Audit.IAM = &iamData
 }
 
-func buildUser(svc *iam.IAM, user *iam.User, vmfaMap map[string]string) *IAMUser {
+func buildUser(svc *iam.IAM, user *iam.User, mfaMap map[string]string) *IAMUser {
 	u := &IAMUser{}
 	u.ARN = *user.Arn
 	u.CreatedAt = *user.CreateDate
@@ -90,8 +87,14 @@ func buildUser(svc *iam.IAM, user *iam.User, vmfaMap map[string]string) *IAMUser
 
 	u.Password = password
 
-	if len(vmfaMap[u.ARN]) > 0 {
-		u.MFAType = "virtual"
+	mfaSerial := mfaMap[u.Name]
+
+	if len(mfaSerial) > 0 {
+		if strings.HasPrefix(mfaSerial, "arn") {
+			u.MFAType = "virtual"
+		} else {
+			u.MFAType = "hardware"
+		}
 	} else {
 		u.MFAType = "none"
 	}
@@ -113,11 +116,12 @@ func buildKeys(svc *iam.IAM, user *IAMUser) {
 			log.Fatalf("Couldn't determine when key was last used: %v\n", err)
 		}
 
-		iamLastUsed := IAMLastUsed{}
+		var iamLastUsed *IAMLastUsed
 
 		if lastUsed != nil && lastUsed.AccessKeyLastUsed != nil {
 			klu := lastUsed.AccessKeyLastUsed
 			if klu.LastUsedDate != nil {
+				iamLastUsed = &IAMLastUsed{}
 				iamLastUsed.Date = *klu.LastUsedDate
 				iamLastUsed.Region = *klu.Region
 				iamLastUsed.ServiceName = *klu.ServiceName
@@ -136,36 +140,21 @@ func buildKeys(svc *iam.IAM, user *IAMUser) {
 }
 
 //
-// Query for all Virtual MFAs and return a slice.  The devices can
-// be matched up with IAM users by looking at the User->Arn field.
+// Query for all MFAs and return a slice.  The AWS Go SDK requires that
+// we query for MFA on each user, there's no way to query for all hardware and
+// virtual MFA tokens at once.
 //
-func getVirtualMFAs(svc *iam.IAM) []*iam.VirtualMFADevice {
+func getMFAs(svc *iam.IAM, users []*iam.User) []*iam.MFADevice {
 
-	maxItems := int64(1000)
+	devices := make([]*iam.MFADevice, 0, 50)
 
-	devices := make([]*iam.VirtualMFADevice, 0, 50)
-
-	remaining := true
-	marker := ""
-
-	for remaining {
-		var input iam.ListVirtualMFADevicesInput
-		if len(marker) > 0 {
-			input = iam.ListVirtualMFADevicesInput{Marker: &marker, MaxItems: &maxItems}
-		} else {
-			input = iam.ListVirtualMFADevicesInput{MaxItems: &maxItems}
-		}
-
-		output, err := svc.ListVirtualMFADevices(&input)
+	for _, user := range users {
+		input := iam.ListMFADevicesInput{UserName: user.UserName}
+		output, err := svc.ListMFADevices(&input)
 		if err != nil {
-			log.Fatalf("Couldn't get Virtual MFA devices: %v\n", err)
+			log.Fatalf("Couldn't query MFA device for user %v: %v\n", user.UserName, err)
 		}
-
-		devices = append(devices, output.VirtualMFADevices...)
-		if output.Marker != nil {
-			marker = *output.Marker
-		}
-		remaining = *output.IsTruncated
+		devices = append(devices, output.MFADevices...)
 	}
 
 	return devices
@@ -190,10 +179,10 @@ type IAMUser struct {
 
 // IAMKey is an access key used by an AWS entity
 type IAMKey struct {
-	ID        string      `json:"id"`
-	CreatedAt time.Time   `json:"createdAt"`
-	Status    string      `json:"status"`
-	LastUsed  IAMLastUsed `json:"lastUsed"`
+	ID        string       `json:"id"`
+	CreatedAt time.Time    `json:"createdAt"`
+	Status    string       `json:"status"`
+	LastUsed  *IAMLastUsed `json:"lastUsed"`
 }
 
 type IAMLastUsed struct {
