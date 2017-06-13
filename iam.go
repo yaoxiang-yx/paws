@@ -113,12 +113,24 @@ func buildKeys(svc *iam.IAM, user *IAMUser) {
 			log.Fatalf("Couldn't determine when key was last used: %v\n", err)
 		}
 
+		iamLastUsed := IAMLastUsed{}
+
+		if lastUsed != nil && lastUsed.AccessKeyLastUsed != nil {
+			klu := lastUsed.AccessKeyLastUsed
+			if klu.LastUsedDate != nil {
+				iamLastUsed.Date = *klu.LastUsedDate
+				iamLastUsed.Region = *klu.Region
+				iamLastUsed.ServiceName = *klu.ServiceName
+			}
+		}
+
 		userKey := IAMKey{ID: *key.AccessKeyId,
 			CreatedAt: *key.CreateDate,
 			Status:    *key.Status,
-			LastUsed: IAMLastUsed{Date: *lastUsed.AccessKeyLastUsed.LastUsedDate,
-				Region:      *lastUsed.AccessKeyLastUsed.Region,
-				ServiceName: *lastUsed.AccessKeyLastUsed.ServiceName}}
+			LastUsed:  iamLastUsed}
+		// LastUsed: IAMLastUsed{Date: *lastUsed.AccessKeyLastUsed.LastUsedDate,
+		// 	Region:      *lastUsed.AccessKeyLastUsed.Region,
+		// 	ServiceName: *lastUsed.AccessKeyLastUsed.ServiceName}}
 		user.Keys = append(user.Keys, userKey)
 	}
 }
