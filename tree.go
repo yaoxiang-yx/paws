@@ -33,5 +33,6 @@ type AWSTree struct {
 // data.  Policy data (and the derived from it) exist elsewhere.
 type AuditData struct {
 	IAM *IAMData `json:"iam"`
+	KMS *KMSData `json:"kms"`
 	//TODO: Create and fill in RDS, KMS, and EC2 data here.
 }

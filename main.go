@@ -53,7 +53,7 @@ type TreeBuilder interface {
 func main() {
 
 	// TODO: Put your EC2, RDS, and KMS Treebuilder instances here.
-	builders := []TreeBuilder{IAMBuilder{}}
+	builders := []TreeBuilder{IAMBuilder{}, KMSBuilder{}}
 
 	sess, err := session.NewSession(&aws.Config{
 		// TODO: Jason to remove hardcoded region
