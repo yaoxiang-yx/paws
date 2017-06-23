@@ -58,24 +58,76 @@ func buildKey(svc *kms.KMS, key *kms.KeyListEntry) *KMSKey {
 	}
 
 	// CMK policy
+	//------------
+	// Retrieve CMK policy
 	keyPolicy := getAllKeyPolicy(svc, key)
+
 	if keyPolicy != nil {
+		// Create policyData struct with statement array
 		policyData := &KMSPolicy{Statement: make([]PolicyStatement, 0, len(keyPolicy.PolicyNames))}
 
+		// CMK contains one policy
 		policyData.Name = *keyPolicy.PolicyNames[0]
 
+		// Retrieve CMK policy content
 		policyContent := getKeyPolicyContent(svc, key, policyData.Name)
 
+		// *** Policy content is a long string in json format. Hence requires to self formart it to get data needed
+		// Split the string via \n
 		arr := strings.Split(*policyContent.Policy, "\n")
+
+		// Initialize an empty PolicyStatement struct
+		var statement *PolicyStatement = &PolicyStatement{}
+
+		// Initialize sIndex variable for keeping track which statement it is currently at
+		sIndex := -1
+
+		// Loop through every values
 		for _, w := range arr {
-			fmt.Println(strings.TrimSpace(w))
+
+			// Remove left and right spaces
+			str := strings.TrimSpace(w)
+
+			// If the value contains keyword 'Sid'
+			if strings.Contains(str, "Sid") {
+
+				// Create new PolicyStatement stuct
+				statement = &PolicyStatement{}
+
+				// Format the string to get only Sid value
+				newSid := strings.Split(str, ":")[1]
+				newSid = strings.Replace(newSid, "\"", "", -1)
+				newSid = strings.Replace(newSid, ",", "", -1)
+				newSid = strings.TrimSpace(newSid)
+				statement.Sid = newSid
+
+				// Update PolicyStatement struct and append into policyData statement array
+				policyData.Statement = append(policyData.Statement, *statement)
+
+				// Update statement index location
+				sIndex++
+			}
+
+			// If the value contains keyword 'BypassPolicyLockoutSafetyCheck'
+			if strings.Contains(str, "BypassPolicyLockoutSafetyCheck") {
+
+				// Format the string to get only BypassPolicyLockoutSafetyCheck value
+				newBPLSC := strings.TrimSpace(strings.Split(str, ":")[2])
+
+				// Update policyData statement BypassPolicyLockoutSafetyCheck value using statement index
+				if newBPLSC == "\"true\"" {
+					policyData.Statement[sIndex].BypassPolicyLockoutSafetyCheck = true
+				} else {
+					policyData.Statement[sIndex].BypassPolicyLockoutSafetyCheck = false
+				}
+			}
+
 		}
 
 		k.Policy = *policyData
 
 	}
 
-	fmt.Println("-----------------------------")
 	return k
 }
 
@@ -184,5 +236,5 @@ type KMSPolicy struct {
 
 type PolicyStatement struct {
 	Sid                            string `json:"Sid"`
-	BypassPolicyLockoutSafetyCheck string `json:"BypassPolicyLockoutSafetyCheck"`
+	BypassPolicyLockoutSafetyCheck bool   `json:"BypassPolicyLockoutSafetyCheck"`
 }
