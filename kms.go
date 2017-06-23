@@ -1,10 +1,8 @@
 package main
 
 import (
-	//"encoding/json"
-	//"fmt"
+	"fmt"
 	"log"
-	//"net/url"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -83,7 +81,6 @@ func buildKey(svc *kms.KMS, key *kms.KeyListEntry) *KMSKey {
 
 		// Loop through every values
 		for _, w := range arr {
-
 			// Remove left and right spaces
 			str := strings.TrimSpace(w)
 
@@ -94,11 +91,9 @@ func buildKey(svc *kms.KMS, key *kms.KeyListEntry) *KMSKey {
 				statement = &PolicyStatement{}
 
 				// Format the string to get only Sid value
-				newSid := strings.Split(str, ":")[1]
-				newSid = strings.Replace(newSid, "\"", "", -1)
-				newSid = strings.Replace(newSid, ",", "", -1)
-				newSid = strings.TrimSpace(newSid)
-				statement.Sid = newSid
+				sidReplacer := strings.NewReplacer("Sid", "", "\"", "", ",", "", ":", "", " ", "")
+				sid := sidReplacer.Replace(str)
+				statement.Sid = sid
 
 				// Update PolicyStatement struct and append into policyData statement array
 				policyData.Statement = append(policyData.Statement, *statement)
@@ -111,17 +106,32 @@ func buildKey(svc *kms.KMS, key *kms.KeyListEntry) *KMSKey {
 			if strings.Contains(str, "BypassPolicyLockoutSafetyCheck") {
 
 				// Format the string to get only BypassPolicyLockoutSafetyCheck value
-				newBPLSC := strings.TrimSpace(strings.Split(str, ":")[2])
+				bplscReplacer := strings.NewReplacer("kms:BypassPolicyLockoutSafetyCheck", "", "\"", "", ":", "", " ", "")
+				bplsc := bplscReplacer.Replace(str)
 
 				// Update policyData statement BypassPolicyLockoutSafetyCheck value using statement index
-				if newBPLSC == "\"true\"" {
+				if bplsc == "true" {
 					policyData.Statement[sIndex].BypassPolicyLockoutSafetyCheck = true
 				} else {
 					policyData.Statement[sIndex].BypassPolicyLockoutSafetyCheck = false
 				}
 			}
 
+			// If the value contains keyword 'Action'
+			if strings.Contains(str, "Action") {
+
+				// Format the string into an array
+				actionReplacer := strings.NewReplacer("\"", "", "[", "", ":", "", "Action", "", "]", "", " ", "")
+				actions := actionReplacer.Replace(str)
+				actionsArr := strings.Split(actions, ",")
+
+				// Update policyData statement Action value using statement index
+				policyData.Statement[sIndex].Action = actionsArr[:len(actionsArr)-1]
+			}
+
 		}
+
+		fmt.Println("...")
 
 		k.Policy = *policyData
 
@@ -221,12 +231,15 @@ type KMSKey struct {
 	Policy   KMSPolicy `json:"policy"`
 }
 
+// KMSPolicy contains all KMS related policy data collected from CMK.
 type KMSPolicy struct {
 	Name      string            `json:name`
 	Statement []PolicyStatement `json:statement`
 }
 
+// PolicyStatement represents a single KMS CMK policy statement.
 type PolicyStatement struct {
-	Sid                            string `json:"Sid"`
-	BypassPolicyLockoutSafetyCheck bool   `json:"BypassPolicyLockoutSafetyCheck"`
+	Sid                            string   `json:"sid"`
+	Action                         []string `json:"action"`
+	BypassPolicyLockoutSafetyCheck bool     `json:"BypassPolicyLockoutSafetyCheck"`
 }
