@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -102,21 +103,6 @@ func buildKey(svc *kms.KMS, key *kms.KeyListEntry) *KMSKey {
 				sIndex++
 			}
 
-			// If the value contains keyword 'BypassPolicyLockoutSafetyCheck'
-			if strings.Contains(str, "BypassPolicyLockoutSafetyCheck") {
-
-				// Format the string to get only BypassPolicyLockoutSafetyCheck value
-				bplscReplacer := strings.NewReplacer("kms:BypassPolicyLockoutSafetyCheck", "", "\"", "", ":", "", " ", "")
-				bplsc := bplscReplacer.Replace(str)
-
-				// Update policyData statement BypassPolicyLockoutSafetyCheck value using statement index
-				if bplsc == "true" {
-					policyData.Statement[sIndex].BypassPolicyLockoutSafetyCheck = true
-				} else {
-					policyData.Statement[sIndex].BypassPolicyLockoutSafetyCheck = false
-				}
-			}
-
 			// If the value contains keyword 'Action'
 			if strings.Contains(str, "Action") {
 
@@ -127,6 +113,37 @@ func buildKey(svc *kms.KMS, key *kms.KeyListEntry) *KMSKey {
 
 				// Update policyData statement Action value using statement index
 				policyData.Statement[sIndex].Action = actionsArr[:len(actionsArr)-1]
+			}
+
+			// If the value contains keyword 'BypassPolicyLockoutSafetyCheck'
+			if strings.Contains(str, "BypassPolicyLockoutSafetyCheck") {
+
+				// Format the string to get only BypassPolicyLockoutSafetyCheck value
+				bplscReplacer := strings.NewReplacer("kms", "", "BypassPolicyLockoutSafetyCheck", "", "\"", "", ":", "", " ", "")
+				bplsc := bplscReplacer.Replace(str)
+
+				// Update policyData statement BypassPolicyLockoutSafetyCheck value using statement index
+				if bplsc == "true" {
+					policyData.Statement[sIndex].BypassPolicyLockoutSafetyCheck = true
+				} else {
+					policyData.Statement[sIndex].BypassPolicyLockoutSafetyCheck = false
+				}
+			}
+
+			// If the value contains keyword 'MultiFactorAuthAge'
+			if strings.Contains(str, "MultiFactorAuthAge") {
+
+				// Format the string to get only MultiFactorAuthAge value
+				mfaReplacer := strings.NewReplacer("MultiFactorAuthAge", "", "aws", "", "\"", "", ",", "", ":", "", " ", "")
+				mfa := mfaReplacer.Replace(str)
+
+				// Convert string to int
+				mfaInt, mfaerr := strconv.Atoi(mfa)
+				if mfaerr != nil {
+					// handle error
+					log.Fatalf("Couldn't convert mfa to integer: %v\n", mfaerr)
+				}
+				policyData.Statement[sIndex].MultiFactorAuthAge = mfaInt
 			}
 
 		}
@@ -242,4 +259,5 @@ type PolicyStatement struct {
 	Sid                            string   `json:"sid"`
 	Action                         []string `json:"action"`
 	BypassPolicyLockoutSafetyCheck bool     `json:"BypassPolicyLockoutSafetyCheck"`
+	MultiFactorAuthAge             int      `json:"MultiFactorAuthAge"`
 }
