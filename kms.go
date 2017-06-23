@@ -2,11 +2,10 @@ package main
 
 import (
 	//"encoding/json"
-	"fmt"
+	//"fmt"
 	"log"
 	//"net/url"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -214,19 +213,12 @@ type KMSData struct {
 
 // KMSKey represents a single KMS CMK, as collected through an AWS key scan.
 type KMSKey struct {
-	ARN      string      `json:"arn"`
-	ID       string      `json:"id"`
-	Enabled  bool        `json:"enabled"`
-	State    string      `json:"state"`
-	Rotation bool        `json:"rotation"`
-	Policy   KMSPolicy   `json:"policy"`
-	LastUsed KMSLastUsed `json:"lastUsed"`
-}
-
-type KMSLastUsed struct {
-	Date        time.Time `json:"date"`
-	Region      string    `json:"region"`
-	ServiceName string    `json:"serviceName"`
+	ARN      string    `json:"arn"`
+	ID       string    `json:"id"`
+	Enabled  bool      `json:"enabled"`
+	State    string    `json:"state"`
+	Rotation bool      `json:"rotation"`
+	Policy   KMSPolicy `json:"policy"`
 }
 
 type KMSPolicy struct {
