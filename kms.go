@@ -1,13 +1,14 @@
 package main
 
 import (
-	"fmt"
+	//"fmt"
 	"log"
 	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
+	//"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/kms"
 	//"reflect"
 )
@@ -35,6 +36,29 @@ func (builder KMSBuilder) Populate(session *session.Session, tree *AWSTree) {
 	}
 
 	tree.Audit.KMS = &kmsData
+
+	// iamSvc := iam.New(session)
+	// iamParams := &iam.ListPoliciesInput{
+	// 	OnlyAttached: aws.Bool(true), // Required
+	// 	Scope:        aws.String("Local"),
+	// }
+
+	// iamResp, iamErr := iamSvc.ListPolicies(iamParams)
+	// if iamErr != nil {
+	// 	fmt.Println(iamErr)
+	// }
+
+	// iamPolicyParam := &iam.GetPolicyInput{
+	// 	PolicyArn: aws.String(*iamResp.Policies[0].Arn),
+	// }
+
+	// iamPolicyResp, iamPolicyErr := iamSvc.GetPolicy(iamPolicyParam)
+	// if iamPolicyErr != nil {
+	// 	fmt.Println(iamPolicyErr)
+	// }
+
+	// fmt.Println(iamPolicyResp)
+
 }
 
 func buildKey(svc *kms.KMS, key *kms.KeyListEntry) *KMSKey {
@@ -57,8 +81,15 @@ func buildKey(svc *kms.KMS, key *kms.KeyListEntry) *KMSKey {
 
 	// CMK policy
 	//------------
+	buildPolicy(svc, k)
+
+	return k
+}
+
+func buildPolicy(svc *kms.KMS, key *KMSKey) {
+
 	// Retrieve CMK policy
-	keyPolicy := getAllKeyPolicy(svc, key)
+	keyPolicy := getAllKeyPolicy(svc, key.ID)
 
 	if keyPolicy != nil {
 		// Create policyData struct with statement array
@@ -68,7 +99,7 @@ func buildKey(svc *kms.KMS, key *kms.KeyListEntry) *KMSKey {
 		policyData.Name = *keyPolicy.PolicyNames[0]
 
 		// Retrieve CMK policy content
-		policyContent := getKeyPolicyContent(svc, key, policyData.Name)
+		policyContent := getKeyPolicyContent(svc, key.ID, policyData.Name)
 
 		// *** Policy content is a long string in json format. Hence requires to self formart it to get data needed
 		// Split the string via \n
@@ -148,13 +179,8 @@ func buildKey(svc *kms.KMS, key *kms.KeyListEntry) *KMSKey {
 
 		}
 
-		fmt.Println("...")
-
-		k.Policy = *policyData
-
+		key.Policy = *policyData
 	}
-
-	return k
 }
 
 //
@@ -198,9 +224,9 @@ func getCMKRotateStatus(svc *kms.KMS, key *kms.KeyListEntry) *kms.GetKeyRotation
 //
 // Querying for all policies of a CMK
 //
-func getAllKeyPolicy(svc *kms.KMS, key *kms.KeyListEntry) *kms.ListKeyPoliciesOutput {
+func getAllKeyPolicy(svc *kms.KMS, keyId string) *kms.ListKeyPoliciesOutput {
 	params := &kms.ListKeyPoliciesInput{
-		KeyId: aws.String(*key.KeyId), // Required
+		KeyId: aws.String(keyId), // Required
 	}
 	keyPolicies, err := svc.ListKeyPolicies(params)
 
@@ -216,9 +242,9 @@ func getAllKeyPolicy(svc *kms.KMS, key *kms.KeyListEntry) *kms.ListKeyPoliciesOu
 //
 // Querying for CMK policy content
 //
-func getKeyPolicyContent(svc *kms.KMS, key *kms.KeyListEntry, policyName string) *kms.GetKeyPolicyOutput {
+func getKeyPolicyContent(svc *kms.KMS, keyId string, policyName string) *kms.GetKeyPolicyOutput {
 	content_params := &kms.GetKeyPolicyInput{
-		KeyId:      aws.String(*key.KeyId), // Required
+		KeyId:      aws.String(keyId),      // Required
 		PolicyName: aws.String(policyName), // Required
 	}
 
