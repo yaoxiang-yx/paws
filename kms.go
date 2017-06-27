@@ -3,12 +3,13 @@ package main
 import (
 	//"fmt"
 	"log"
+	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-	//"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/kms"
 	//"reflect"
 )
@@ -35,29 +36,9 @@ func (builder KMSBuilder) Populate(session *session.Session, tree *AWSTree) {
 		kmsData.Keys = append(kmsData.Keys, *buildKey(svc, key))
 	}
 
+	buildIAMPolicy(session, &kmsData)
+
 	tree.Audit.KMS = &kmsData
-
-	// iamSvc := iam.New(session)
-	// iamParams := &iam.ListPoliciesInput{
-	// 	OnlyAttached: aws.Bool(true), // Required
-	// 	Scope:        aws.String("Local"),
-	// }
-
-	// iamResp, iamErr := iamSvc.ListPolicies(iamParams)
-	// if iamErr != nil {
-	// 	fmt.Println(iamErr)
-	// }
-
-	// iamPolicyParam := &iam.GetPolicyInput{
-	// 	PolicyArn: aws.String(*iamResp.Policies[0].Arn),
-	// }
-
-	// iamPolicyResp, iamPolicyErr := iamSvc.GetPolicy(iamPolicyParam)
-	// if iamPolicyErr != nil {
-	// 	fmt.Println(iamPolicyErr)
-	// }
-
-	// fmt.Println(iamPolicyResp)
 
 }
 
@@ -81,12 +62,12 @@ func buildKey(svc *kms.KMS, key *kms.KeyListEntry) *KMSKey {
 
 	// CMK policy
 	//------------
-	buildPolicy(svc, k)
+	buildKeyPolicy(svc, k)
 
 	return k
 }
 
-func buildPolicy(svc *kms.KMS, key *KMSKey) {
+func buildKeyPolicy(svc *kms.KMS, key *KMSKey) {
 
 	// Retrieve CMK policy
 	keyPolicy := getAllKeyPolicy(svc, key.ID)
@@ -183,6 +164,63 @@ func buildPolicy(svc *kms.KMS, key *KMSKey) {
 	}
 }
 
+func buildIAMPolicy(session *session.Session, kmsData *KMSData) {
+
+	//
+	//Query for IAM local policies
+	//
+	iamSvc := iam.New(session)
+	iamListPolicyParams := &iam.ListPoliciesInput{
+		OnlyAttached: aws.Bool(true), // Required
+		Scope:        aws.String("Local"),
+	}
+
+	iamListPolicyResp, iamListPolicyErr := iamSvc.ListPolicies(iamListPolicyParams)
+	if iamListPolicyErr != nil {
+		log.Fatalf("Couldn't list IAM policy: %v\n", iamListPolicyErr)
+	}
+
+	kmsData.IAMPolicies = make([]IAMPolicy, 0, len(iamListPolicyResp.Policies))
+
+	//
+	//Query for IAM local policy content
+	//
+	kmsRules := [14]string{"kms:Create", "kms:Describe", "kms:Enable", "kms:List", "kms:Put", "kms:Update", "kms:Revoke", "kms:Disable", "kms:Get", "kms:Delete", "kms:TagResource", "kms:UntagResource", "kms:ScheduleKeyDeletion", "kms:CancelKeyDeletion"}
+
+	for _, iamPolicy := range iamListPolicyResp.Policies {
+		iamGetPolicyParam := &iam.GetPolicyVersionInput{
+			PolicyArn: aws.String(*iamPolicy.Arn),
+			VersionId: aws.String(*iamPolicy.DefaultVersionId),
+		}
+
+		//fmt.Println(iamPolicy)
+
+		iamPolicyResp, iamPolicyErr := iamSvc.GetPolicyVersion(iamGetPolicyParam)
+		if iamPolicyErr != nil {
+			log.Fatalf("Couldn't get IAM policy content: %v\n", iamPolicyErr)
+		}
+
+		iamPolicyMap, iamPolicyMapErr := url.ParseQuery("policy=" + *iamPolicyResp.PolicyVersion.Document)
+		if iamPolicyMapErr != nil {
+			log.Fatalf("Couldn't format IAM policy content: %v\n", iamPolicyErr)
+		}
+
+		iamPolicyStatement := iamPolicyMap.Get("policy")
+
+		for _, kmsRule := range kmsRules {
+			// If the value contains keyword 'Sid'
+			if strings.Contains(iamPolicyStatement, kmsRule) {
+				iamPolicyObj := IAMPolicy{Name: *iamPolicy.PolicyName,
+					Statement: iamPolicyStatement,
+				}
+
+				kmsData.IAMPolicies = append(kmsData.IAMPolicies, iamPolicyObj)
+				break
+			}
+		}
+	}
+}
+
 //
 // Querying for CMK descriptions
 //
@@ -261,7 +299,8 @@ func getKeyPolicyContent(svc *kms.KMS, keyId string, policyName string) *kms.Get
 
 // KMSData contains all KMS related data collected through the AWS key scan.
 type KMSData struct {
-	Keys []KMSKey `json:"keys"`
+	Keys        []KMSKey    `json:"keys"`
+	IAMPolicies []IAMPolicy `json:"iamPolicies"`
 }
 
 // KMSKey represents a single KMS CMK, as collected through an AWS key scan.
@@ -286,4 +325,9 @@ type PolicyStatement struct {
 	Action                         []string `json:"action"`
 	BypassPolicyLockoutSafetyCheck bool     `json:"BypassPolicyLockoutSafetyCheck"`
 	MultiFactorAuthAge             int      `json:"MultiFactorAuthAge"`
+}
+
+type IAMPolicy struct {
+	Name      string `json:name`
+	Statement string `json:statement`
 }
