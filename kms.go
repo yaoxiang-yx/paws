@@ -91,7 +91,7 @@ func buildKeyPolicy(svc *kms.KMS, key *KMSKey) {
 
 		// Initialize sIndex variable for keeping track which statement it is currently at
 		sIndex := -1
-
+		sid := ""
 		// Loop through every values
 		for _, w := range arr {
 			// Remove left and right spaces
@@ -99,13 +99,16 @@ func buildKeyPolicy(svc *kms.KMS, key *KMSKey) {
 
 			// If the value contains keyword 'Sid'
 			if strings.Contains(str, "Sid") {
+				// Format the string to get only Sid value
+				sidReplacer := strings.NewReplacer("Sid", "", "\"", "", ",", "", ":", "", " ", "")
+				sid = sidReplacer.Replace(str)
+			}
+
+			// If the value contains keyword 'Action'
+			if strings.Contains(str, "Action") {
 
 				// Create new PolicyStatement stuct
 				statement = &PolicyStatement{}
-
-				// Format the string to get only Sid value
-				sidReplacer := strings.NewReplacer("Sid", "", "\"", "", ",", "", ":", "", " ", "")
-				sid := sidReplacer.Replace(str)
 				statement.Sid = sid
 
 				// Update PolicyStatement struct and append into policyData statement array
@@ -113,10 +116,7 @@ func buildKeyPolicy(svc *kms.KMS, key *KMSKey) {
 
 				// Update statement index location
 				sIndex++
-			}
-
-			// If the value contains keyword 'Action'
-			if strings.Contains(str, "Action") {
+				sid = ""
 
 				// Format the string into an array
 				actionReplacer := strings.NewReplacer("\"", "", "[", "", ":", "", "Action", "", "]", "", " ", "")
@@ -187,19 +187,20 @@ func buildIAMPolicy(session *session.Session, kmsData *KMSData) {
 	//
 	kmsRules := [14]string{"kms:Create", "kms:Describe", "kms:Enable", "kms:List", "kms:Put", "kms:Update", "kms:Revoke", "kms:Disable", "kms:Get", "kms:Delete", "kms:TagResource", "kms:UntagResource", "kms:ScheduleKeyDeletion", "kms:CancelKeyDeletion"}
 
+	//Loop through each policy
 	for _, iamPolicy := range iamListPolicyResp.Policies {
 		iamGetPolicyParam := &iam.GetPolicyVersionInput{
 			PolicyArn: aws.String(*iamPolicy.Arn),
 			VersionId: aws.String(*iamPolicy.DefaultVersionId),
 		}
 
-		//fmt.Println(iamPolicy)
-
+		// Query for policy content
 		iamPolicyResp, iamPolicyErr := iamSvc.GetPolicyVersion(iamGetPolicyParam)
 		if iamPolicyErr != nil {
 			log.Fatalf("Couldn't get IAM policy content: %v\n", iamPolicyErr)
 		}
 
+		// Parse the policy
 		iamPolicyMap, iamPolicyMapErr := url.ParseQuery("policy=" + *iamPolicyResp.PolicyVersion.Document)
 		if iamPolicyMapErr != nil {
 			log.Fatalf("Couldn't format IAM policy content: %v\n", iamPolicyErr)
@@ -208,7 +209,7 @@ func buildIAMPolicy(session *session.Session, kmsData *KMSData) {
 		iamPolicyStatement := iamPolicyMap.Get("policy")
 
 		for _, kmsRule := range kmsRules {
-			// If the value contains keyword 'Sid'
+			// If the value contains keyword of KMS rule
 			if strings.Contains(iamPolicyStatement, kmsRule) {
 				iamPolicyObj := IAMPolicy{Name: *iamPolicy.PolicyName,
 					Statement: iamPolicyStatement,
@@ -331,3 +332,9 @@ type IAMPolicy struct {
 	Name      string `json:name`
 	Statement string `json:statement`
 }
+
+// type IAMPolicyStatement struct {
+// 	Action                         []string `json:"action"`
+// 	BypassPolicyLockoutSafetyCheck bool     `json:"BypassPolicyLockoutSafetyCheck"`
+// 	MultiFactorAuthAge             int      `json:"MultiFactorAuthAge"`
+// }
