@@ -1,6 +1,7 @@
 package main
 
 import (
+	//"encoding/json"
 	//"fmt"
 	"log"
 	"net/url"
@@ -23,23 +24,19 @@ func (builder KMSBuilder) Name() string {
 func (builder KMSBuilder) Populate(session *session.Session, tree *AWSTree) {
 	svc := kms.New(session)
 
-	// Listing all CMK keys
-	params := &kms.ListKeysInput{}
-	keys, err := svc.ListKeys(params)
-	if err != nil {
-		log.Fatalf("Couldn't list CMKs: %v\n", err)
+	keys := getCMKs(svc)
+
+	if keys != nil {
+		kmsData := KMSData{Keys: make([]KMSKey, 0, len(keys))}
+
+		for _, key := range keys {
+			kmsData.Keys = append(kmsData.Keys, *buildKey(svc, key))
+		}
+
+		buildIAMPolicy(session, &kmsData)
+
+		tree.Audit.KMS = &kmsData
 	}
-
-	kmsData := KMSData{Keys: make([]KMSKey, 0, len(keys.Keys))}
-
-	for _, key := range keys.Keys {
-		kmsData.Keys = append(kmsData.Keys, *buildKey(svc, key))
-	}
-
-	buildIAMPolicy(session, &kmsData)
-
-	tree.Audit.KMS = &kmsData
-
 }
 
 func buildKey(svc *kms.KMS, key *kms.KeyListEntry) *KMSKey {
@@ -223,6 +220,44 @@ func buildIAMPolicy(session *session.Session, kmsData *KMSData) {
 }
 
 //
+// Query for all CMK
+//
+func getCMKs(svc *kms.KMS) []*kms.KeyListEntry {
+
+	limit := int64(1000)
+
+	keys := make([]*kms.KeyListEntry, 0)
+
+	remaining := true
+	marker := ""
+
+	for remaining {
+		params := &kms.ListKeysInput{}
+
+		if len(marker) > 0 {
+			params = &kms.ListKeysInput{Marker: &marker, Limit: &limit}
+		} else {
+			params = &kms.ListKeysInput{Limit: &limit}
+		}
+
+		output, err := svc.ListKeys(params)
+		if err != nil {
+			log.Fatalf("Couldn't list CMKs: %v\n", err)
+			return nil
+		}
+
+		keys = append(keys, output.Keys...)
+
+		if output.NextMarker != nil {
+			marker = *output.NextMarker
+		}
+		remaining = *output.Truncated
+	}
+
+	return keys
+}
+
+//
 // Querying for CMK descriptions
 //
 func describeCMK(svc *kms.KMS, key *kms.KeyListEntry) *kms.DescribeKeyOutput {
@@ -332,9 +367,3 @@ type IAMPolicy struct {
 	Name      string `json:name`
 	Statement string `json:statement`
 }
-
-// type IAMPolicyStatement struct {
-// 	Action                         []string `json:"action"`
-// 	BypassPolicyLockoutSafetyCheck bool     `json:"BypassPolicyLockoutSafetyCheck"`
-// 	MultiFactorAuthAge             int      `json:"MultiFactorAuthAge"`
-// }
